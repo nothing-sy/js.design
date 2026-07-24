@@ -159,14 +159,18 @@ JSON 超过约 400KB 时，会写入临时文件（如 `%TEMP%/jsdesign-mcp/expo
 
 ---
 
-## 八、项目结构
+## 项目结构
 
 ```text
 js.design/
+  assets/
+    icon-128.png          # 128×128 应用图标
+    cover-1920x1080.png   # 1920×1080 封面图
   plugin/                 # 即时设计插件
     manifest.json
     code.js               # 主线程：遍历 / 序列化
     ui.html               # UI：WebSocket 桥 + 连接状态
+    icon-128.png          # 插件图标
   mcp-server/             # Node MCP Server
     src/
       index.ts            # stdio MCP 入口
