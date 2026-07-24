@@ -131,6 +131,7 @@ get_connection_status → export_selection →（可选）get_design_tokens → 
 | `export_selection` | **导出当前选区完整节点树（最常用）** |
 | `export_node` | 按 `nodeId` 或 `name` 导出子树 |
 | `export_page` | 导出整页（大页慎用） |
+| `export_assets` | 导出切图 / 图片资源到本地目录 |
 | `get_design_tokens` | 颜色 / 字号 / 间距 / 圆角去重 |
 | `get_node_css` | 单节点近似 CSS 摘要 |
 
@@ -139,6 +140,8 @@ get_connection_status → export_selection →（可选）get_design_tokens → 
 - `maxDepth`：最大递归深度  
 - `skipHidden`：跳过隐藏节点（默认 `true`）  
 - `skipInstanceChildren`：跳过组件实例内部（默认 `true`）  
+- `includeAssets`：一并导出位图（若工具支持）  
+- `outputDir`：切图输出目录  
 
 JSON 超过约 400KB 时，会写入临时文件（如 `%TEMP%/jsdesign-mcp/export-*.json`），工具返回 `path`，Agent 用 Read 读取即可。
 
@@ -159,26 +162,23 @@ JSON 超过约 400KB 时，会写入临时文件（如 `%TEMP%/jsdesign-mcp/expo
 
 ---
 
-## 项目结构
+## 八、项目结构
 
 ```text
 js.design/
-  assets/
-    icon-128.png          # 128×128 应用图标
-    cover-1920x1080.png   # 1920×1080 封面图
-  plugin/                 # 即时设计插件
+  plugin/                 # 即时设计插件（桥）
     manifest.json
-    code.js               # 主线程：遍历 / 序列化
-    ui.html               # UI：WebSocket 桥 + 连接状态
-    icon-128.png          # 插件图标
+    code.js
+    ui.html
   mcp-server/             # Node MCP Server
     src/
-      index.ts            # stdio MCP 入口
-      bridge.ts           # WebSocket RPC
-      tools.ts            # MCP 工具注册
-      schema.ts           # RPC + DesignNode 类型
-    dist/                 # build 产物
-  .cursor/mcp.json        # 项目级配置示例
+      index.ts
+      bridge.ts
+      tools.ts
+      schema.ts
+    dist/                 # build 产物（Cursor 启动入口）
+  .cursor/mcp.json        # 项目级 MCP 配置示例
+  package.json
   README.md
 ```
 
@@ -200,7 +200,7 @@ Cursor Agent ──stdio──► MCP Server ──WebSocket──► 插件 UI 
 | 端口被占用 | 结束占用 `3847` 的进程，或设 `JSDESIGN_MCP_PORT` 并同步改插件地址 |
 | 插件显示「未连接」 | 先保证 Cursor MCP 绿灯，再点插件「重新连接」 |
 | `export_selection` 报错无选中 | 在画布上选中目标 Frame 后再调 |
-| 导出很慢 / 很大 | 优先导出单个画板；加大 `skipHidden`；用 `maxDepth` 限制深度 |
+| 导出很慢 / 很大 | 优先导出单个画板；用 `maxDepth` 限制深度 |
 
 ---
 
@@ -209,7 +209,6 @@ Cursor Agent ──stdio──► MCP Server ──WebSocket──► 插件 UI 
 - 插件须用户打开并保持运行，不能后台常驻  
 - 不能实时监听编辑；每次工具调用拉取最新快照  
 - 同时只能运行一个即时设计插件  
-- 一期不导出位图，以结构与样式数值为主  
 - **不做写回画布**
 
 ---

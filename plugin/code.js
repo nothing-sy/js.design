@@ -9,6 +9,8 @@ const DEFAULTS = {
   skipHidden: true,
   skipInstanceChildren: true,
   maxDepth: 40,
+  maxAssets: 50,
+  exportScale: 2,
 };
 
 jsDesign.showUI(__html__, { width: 320, height: 220 });
@@ -52,6 +54,8 @@ async function handleMethod(method, params) {
       return exportNode(params);
     case "export_page":
       return exportPage(params);
+    case "export_assets":
+      return exportAssets(params);
     case "get_design_tokens":
       return getDesignTokens(params);
     case "get_node_css":
@@ -124,19 +128,26 @@ function applyTraverseFlags(opts) {
   }
 }
 
-function exportSelection(params) {
+async function exportSelection(params) {
   const selection = jsDesign.currentPage.selection;
   if (!selection || selection.length === 0) {
     throw new Error("当前没有选中节点。请在即时设计中选中目标画板/图层后再导出。");
   }
   const opts = resolveOptions(params);
   applyTraverseFlags(opts);
-  return {
+  const nodes = selection.map((n) => serializeNode(n, 0, opts));
+  const result = {
     source: "selection",
     documentName: jsDesign.root.name,
     page: { id: jsDesign.currentPage.id, name: jsDesign.currentPage.name },
-    nodes: selection.map((n) => serializeNode(n, 0, opts)),
+    nodes,
   };
+  if (params.includeAssets) {
+    const assetsResult = await collectAndExportAssets([...selection], params);
+    result.assets = assetsResult.assets;
+    if (assetsResult.truncated) result.assetsTruncated = true;
+  }
+  return result;
 }
 
 function findNodeByIdOrName(nodeId, name) {
@@ -151,7 +162,7 @@ function findNodeByIdOrName(nodeId, name) {
   return null;
 }
 
-function exportNode(params) {
+async function exportNode(params) {
   const node = findNodeByIdOrName(params.nodeId, params.name);
   if (!node) {
     throw new Error(
@@ -162,29 +173,420 @@ function exportNode(params) {
   }
   const opts = resolveOptions(params);
   applyTraverseFlags(opts);
-  return {
+  const result = {
     source: "node",
     documentName: jsDesign.root.name,
     page: { id: jsDesign.currentPage.id, name: jsDesign.currentPage.name },
     node: serializeNode(node, 0, opts),
   };
+  if (params.includeAssets) {
+    const assetsResult = await collectAndExportAssets([node], params);
+    result.assets = assetsResult.assets;
+    if (assetsResult.truncated) result.assetsTruncated = true;
+  }
+  return result;
 }
 
-function exportPage(params) {
+async function exportPage(params) {
   const opts = resolveOptions(params);
   applyTraverseFlags(opts);
   const page = jsDesign.currentPage;
   const children = [];
+  const roots = [];
   for (const child of page.children || []) {
     if (opts.skipHidden && "visible" in child && child.visible === false) continue;
+    roots.push(child);
     children.push(serializeNode(child, 0, opts));
   }
-  return {
+  const result = {
     source: "page",
     documentName: jsDesign.root.name,
     page: { id: page.id, name: page.name },
     children,
   };
+  if (params.includeAssets) {
+    const assetsResult = await collectAndExportAssets(roots, params);
+    result.assets = assetsResult.assets;
+    if (assetsResult.truncated) result.assetsTruncated = true;
+  }
+  return result;
+}
+
+/**
+ * Export image fills + exportSettings nodes (+ optional forced nodeIds) as base64 payloads.
+ * MCP server writes files and returns local paths to the Agent.
+ */
+async function exportAssets(params) {
+  const roots = resolveAssetRoots(params);
+  if (!roots.length) {
+    throw new Error("没有可导出资源的节点。请选中画板，或传入 nodeId / name / nodeIds。");
+  }
+  const collected = await collectAndExportAssets(roots, params);
+  return {
+    source: "assets",
+    documentName: jsDesign.root.name,
+    page: { id: jsDesign.currentPage.id, name: jsDesign.currentPage.name },
+    assets: collected.assets,
+    truncated: collected.truncated,
+    skipped: collected.skipped,
+    hint: collected.truncated
+      ? "资源数量超过上限，已截断。可缩小选区或提高 maxAssets 后重试。"
+      : undefined,
+  };
+}
+
+function resolveAssetRoots(params) {
+  if (Array.isArray(params.nodeIds) && params.nodeIds.length > 0) {
+    const roots = [];
+    for (const id of params.nodeIds) {
+      const n = jsDesign.getNodeById(id);
+      if (n) roots.push(n);
+    }
+    if (roots.length) return roots;
+  }
+  if (params.nodeId || params.name) {
+    const node = findNodeByIdOrName(params.nodeId, params.name);
+    if (node) return [node];
+  }
+  const selection = jsDesign.currentPage.selection;
+  if (selection && selection.length > 0) return [...selection];
+  return [];
+}
+
+async function collectAndExportAssets(roots, params) {
+  const maxAssets =
+    typeof params.maxAssets === "number" && params.maxAssets > 0
+      ? Math.min(params.maxAssets, 100)
+      : DEFAULTS.maxAssets;
+  const scale =
+    typeof params.scale === "number" && params.scale > 0 ? params.scale : DEFAULTS.exportScale;
+  const format = (params.format || "PNG").toUpperCase();
+  const skipHidden =
+    typeof params.skipHidden === "boolean" ? params.skipHidden : DEFAULTS.skipHidden;
+  const skipInstanceChildren =
+    typeof params.skipInstanceChildren === "boolean"
+      ? params.skipInstanceChildren
+      : DEFAULTS.skipInstanceChildren;
+
+  const imageFills = new Map(); // hash -> { hash, nodeIds, names, width, height }
+  const exportNodes = new Map(); // nodeId -> node
+
+  function walk(node, depth) {
+    if (!node) return;
+    if (skipHidden && "visible" in node && node.visible === false) return;
+
+    if ("fills" in node && node.fills !== jsDesign.mixed && Array.isArray(node.fills)) {
+      for (const fill of node.fills) {
+        if (fill && fill.type === "IMAGE" && fill.imageHash && fill.visible !== false) {
+          const hash = fill.imageHash;
+          let entry = imageFills.get(hash);
+          if (!entry) {
+            entry = {
+              hash,
+              nodeIds: [],
+              names: [],
+              width: "width" in node ? node.width : undefined,
+              height: "height" in node ? node.height : undefined,
+            };
+            imageFills.set(hash, entry);
+          }
+          if (entry.nodeIds.indexOf(node.id) === -1) entry.nodeIds.push(node.id);
+          if (entry.names.indexOf(node.name) === -1) entry.names.push(node.name);
+        }
+      }
+    }
+
+    if (
+      "exportSettings" in node &&
+      Array.isArray(node.exportSettings) &&
+      node.exportSettings.length > 0
+    ) {
+      exportNodes.set(node.id, node);
+    }
+
+    if ("children" in node && Array.isArray(node.children)) {
+      if (skipInstanceChildren && node.type === "INSTANCE") return;
+      for (const child of node.children) walk(child, depth + 1);
+    }
+  }
+
+  for (const root of roots) walk(root, 0);
+
+  // Forced nodeIds always get exportAsync even without exportSettings
+  if (Array.isArray(params.nodeIds)) {
+    for (const id of params.nodeIds) {
+      const n = jsDesign.getNodeById(id);
+      if (n) exportNodes.set(n.id, n);
+    }
+  }
+
+  const assets = [];
+  let skipped = 0;
+  let truncated = false;
+
+  // 1) IMAGE fills via getImageByHash
+  for (const entry of imageFills.values()) {
+    if (assets.length >= maxAssets) {
+      truncated = true;
+      skipped += 1;
+      continue;
+    }
+    try {
+      const image = jsDesign.getImageByHash(entry.hash);
+      if (!image || typeof image.getBytesAsync !== "function") {
+        assets.push({
+          id: "img-" + entry.hash.slice(0, 12),
+          kind: "image-fill",
+          name: sanitizeFileName(entry.names[0] || "image"),
+          format: "PNG",
+          ext: "png",
+          imageHash: entry.hash,
+          nodeIds: entry.nodeIds,
+          width: entry.width,
+          height: entry.height,
+          data: "",
+          error: "getImageByHash 不可用或返回空",
+        });
+        continue;
+      }
+      const bytes = await image.getBytesAsync();
+      const detected = detectImageFormat(bytes);
+      assets.push({
+        id: "img-" + entry.hash.slice(0, 16),
+        kind: "image-fill",
+        name: sanitizeFileName(entry.names[0] || "image"),
+        format: detected.format,
+        ext: detected.ext,
+        imageHash: entry.hash,
+        nodeIds: entry.nodeIds,
+        width: entry.width,
+        height: entry.height,
+        data: uint8ToBase64(bytes),
+        bytes: bytes.length,
+      });
+    } catch (err) {
+      assets.push({
+        id: "img-" + entry.hash.slice(0, 12),
+        kind: "image-fill",
+        name: sanitizeFileName(entry.names[0] || "image"),
+        format: "PNG",
+        ext: "png",
+        imageHash: entry.hash,
+        nodeIds: entry.nodeIds,
+        data: "",
+        error: err && err.message ? err.message : String(err),
+      });
+    }
+  }
+
+  // 2) Nodes with exportSettings (or forced nodeIds)
+  for (const node of exportNodes.values()) {
+    if (assets.length >= maxAssets) {
+      truncated = true;
+      skipped += 1;
+      continue;
+    }
+    // Skip if this node only has IMAGE fill already exported and no exportSettings
+    // (forced nodeIds still export)
+    try {
+      const settings = pickExportSettings(node, format, scale);
+      if (typeof node.exportAsync !== "function") {
+        assets.push({
+          id: "node-" + node.id.replace(/:/g, "_"),
+          kind: "node-export",
+          name: sanitizeFileName(node.name || "node"),
+          format: settings.format,
+          ext: formatToExt(settings.format),
+          nodeId: node.id,
+          nodeIds: [node.id],
+          width: "width" in node ? node.width : undefined,
+          height: "height" in node ? node.height : undefined,
+          data: "",
+          error: "exportAsync 不可用",
+        });
+        continue;
+      }
+      const bytesOrString = await node.exportAsync(settings);
+      let data;
+      let byteLen;
+      let ext = formatToExt(settings.format);
+      let outFormat = settings.format;
+      if (typeof bytesOrString === "string") {
+        // SVG_STRING
+        data = utf8ToBase64(bytesOrString);
+        byteLen = bytesOrString.length;
+        ext = "svg";
+        outFormat = "SVG";
+      } else {
+        data = uint8ToBase64(bytesOrString);
+        byteLen = bytesOrString.length;
+        const detected = detectImageFormat(bytesOrString);
+        if (detected.ext !== "bin") {
+          ext = detected.ext;
+          outFormat = detected.format;
+        }
+      }
+      assets.push({
+        id: "node-" + node.id.replace(/:/g, "_"),
+        kind: "node-export",
+        name: sanitizeFileName(node.name || "node"),
+        format: outFormat,
+        ext,
+        nodeId: node.id,
+        nodeIds: [node.id],
+        width: "width" in node ? node.width : undefined,
+        height: "height" in node ? node.height : undefined,
+        data,
+        bytes: byteLen,
+      });
+    } catch (err) {
+      assets.push({
+        id: "node-" + node.id.replace(/:/g, "_"),
+        kind: "node-export",
+        name: sanitizeFileName(node.name || "node"),
+        format: format,
+        ext: formatToExt(format),
+        nodeId: node.id,
+        nodeIds: [node.id],
+        data: "",
+        error: err && err.message ? err.message : String(err),
+      });
+    }
+  }
+
+  return { assets, truncated, skipped };
+}
+
+function pickExportSettings(node, fallbackFormat, scale) {
+  const settings = node.exportSettings && node.exportSettings[0];
+  if (settings && settings.format) {
+    const fmt = String(settings.format).toUpperCase();
+    if (fmt === "SVG") {
+      return { format: "SVG_STRING" };
+    }
+    const constraint =
+      settings.constraint ||
+      (fmt === "PNG" || fmt === "JPG" ? { type: "SCALE", value: scale } : undefined);
+    return constraint ? { format: fmt, constraint } : { format: fmt };
+  }
+  if (fallbackFormat === "SVG") {
+    return { format: "SVG_STRING" };
+  }
+  return {
+    format: fallbackFormat === "JPG" ? "JPG" : "PNG",
+    constraint: { type: "SCALE", value: scale },
+  };
+}
+
+function sanitizeFileName(name) {
+  return String(name || "asset")
+    .replace(/[<>:"/\\|?*\x00-\x1f]/g, "_")
+    .replace(/\s+/g, "_")
+    .slice(0, 80) || "asset";
+}
+
+function formatToExt(format) {
+  const f = String(format || "PNG").toUpperCase();
+  if (f === "JPG" || f === "JPEG") return "jpg";
+  if (f === "SVG" || f === "SVG_STRING") return "svg";
+  if (f === "PDF") return "pdf";
+  return "png";
+}
+
+function detectImageFormat(bytes) {
+  if (!bytes || !bytes.length) return { format: "PNG", ext: "png" };
+  // PNG
+  if (
+    bytes.length >= 4 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47
+  ) {
+    return { format: "PNG", ext: "png" };
+  }
+  // JPEG
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return { format: "JPG", ext: "jpg" };
+  }
+  // GIF
+  if (
+    bytes.length >= 4 &&
+    bytes[0] === 0x47 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46
+  ) {
+    return { format: "GIF", ext: "gif" };
+  }
+  // WebP
+  if (
+    bytes.length >= 12 &&
+    bytes[0] === 0x52 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x46 &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x45 &&
+    bytes[10] === 0x42 &&
+    bytes[11] === 0x50
+  ) {
+    return { format: "WEBP", ext: "webp" };
+  }
+  // SVG text
+  try {
+    const head = String.fromCharCode.apply(
+      null,
+      Array.prototype.slice.call(bytes.subarray ? bytes.subarray(0, 64) : bytes.slice(0, 64)),
+    );
+    if (head.indexOf("<svg") !== -1 || head.indexOf("<?xml") !== -1) {
+      return { format: "SVG", ext: "svg" };
+    }
+  } catch (_) {
+    /* ignore */
+  }
+  return { format: "PNG", ext: "png" };
+}
+
+/** Pure JS base64 (plugin sandbox may lack btoa). */
+function uint8ToBase64(bytes) {
+  const alphabet =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  let out = "";
+  const len = bytes.length;
+  for (let i = 0; i < len; i += 3) {
+    const a = bytes[i];
+    const b = i + 1 < len ? bytes[i + 1] : 0;
+    const c = i + 2 < len ? bytes[i + 2] : 0;
+    out += alphabet[a >> 2];
+    out += alphabet[((a & 3) << 4) | (b >> 4)];
+    out += i + 1 < len ? alphabet[((b & 15) << 2) | (c >> 6)] : "=";
+    out += i + 2 < len ? alphabet[c & 63] : "=";
+  }
+  return out;
+}
+
+function utf8ToBase64(str) {
+  const bytes = [];
+  for (let i = 0; i < str.length; i++) {
+    let code = str.charCodeAt(i);
+    if (code < 0x80) {
+      bytes.push(code);
+    } else if (code < 0x800) {
+      bytes.push(0xc0 | (code >> 6), 0x80 | (code & 0x3f));
+    } else if (code >= 0xd800 && code <= 0xdbff && i + 1 < str.length) {
+      const low = str.charCodeAt(++i);
+      const cp = 0x10000 + ((code - 0xd800) << 10) + (low - 0xdc00);
+      bytes.push(
+        0xf0 | (cp >> 18),
+        0x80 | ((cp >> 12) & 0x3f),
+        0x80 | ((cp >> 6) & 0x3f),
+        0x80 | (cp & 0x3f),
+      );
+    } else {
+      bytes.push(0xe0 | (code >> 12), 0x80 | ((code >> 6) & 0x3f), 0x80 | (code & 0x3f));
+    }
+  }
+  return uint8ToBase64(bytes);
 }
 
 function getDesignTokens(params) {

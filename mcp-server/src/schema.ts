@@ -47,6 +47,8 @@ export type PaintExport = {
   rgb?: Rgb;
   scaleMode?: string;
   imageHash?: string;
+  /** Absolute path after export_assets / includeAssets writes the file */
+  localPath?: string;
   gradientStops?: Array<{ position: number; color?: string; rgb?: Rgb }>;
   gradientTransform?: unknown;
 };
@@ -125,6 +127,9 @@ export type DesignNode = {
 
   constraints?: unknown;
 
+  /** Absolute path when this node was exported as a raster/SVG asset */
+  assetPath?: string;
+
   // Hierarchy
   children?: DesignNode[];
   childCount?: number;
@@ -132,11 +137,34 @@ export type DesignNode = {
   instanceChildrenSkipped?: boolean;
 };
 
+/** Raw asset payload from plugin (base64). MCP writes files and strips `data`. */
+export type AssetPayload = {
+  /** Stable id used for filename / fill matching */
+  id: string;
+  kind: "image-fill" | "node-export";
+  /** Suggested filename stem (without extension) */
+  name: string;
+  format: string;
+  /** Lowercase extension without dot, e.g. png / jpg / svg */
+  ext: string;
+  imageHash?: string;
+  nodeId?: string;
+  nodeIds?: string[];
+  width?: number;
+  height?: number;
+  /** Base64-encoded file bytes (stripped before returning to Agent) */
+  data: string;
+  bytes?: number;
+  error?: string;
+};
+
 export type ExportSelectionResult = {
   source: "selection";
   documentName: string;
   page: { id: string; name: string };
   nodes: DesignNode[];
+  /** Present when includeAssets was requested (raw base64; MCP strips after write) */
+  assets?: AssetPayload[];
 };
 
 export type ExportNodeResult = {
@@ -144,6 +172,7 @@ export type ExportNodeResult = {
   documentName: string;
   page: { id: string; name: string };
   node: DesignNode;
+  assets?: AssetPayload[];
 };
 
 export type ExportPageResult = {
@@ -151,6 +180,7 @@ export type ExportPageResult = {
   documentName: string;
   page: { id: string; name: string };
   children: DesignNode[];
+  assets?: AssetPayload[];
 };
 
 export type DesignTokens = {
@@ -165,4 +195,19 @@ export type ExportOptions = {
   maxDepth?: number;
   skipHidden?: boolean;
   skipInstanceChildren?: boolean;
+  /** When true, plugin also returns raw asset payloads for MCP to write to disk */
+  includeAssets?: boolean;
+  /** Hint only; MCP server chooses the real output directory */
+  outputDir?: string;
+};
+
+export type ExportAssetsResult = {
+  source: "assets";
+  documentName: string;
+  page: { id: string; name: string };
+  outputDir?: string;
+  assets: Array<Omit<AssetPayload, "data"> & { localPath?: string; data?: string }>;
+  truncated?: boolean;
+  skipped?: number;
+  hint?: string;
 };
