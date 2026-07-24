@@ -1,16 +1,45 @@
+import { writeFileSync, mkdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { Bridge } from "./bridge.js";
 
+/** Spill oversized export JSON to a temp file so Agent can Read the path. */
+const LARGE_JSON_CHARS = 400_000;
+
 function textResult(data: unknown) {
+  const text =
+    typeof data === "string" ? data : JSON.stringify(data, null, 2);
+
+  if (text.length > LARGE_JSON_CHARS) {
+    const dir = join(tmpdir(), "jsdesign-mcp");
+    mkdirSync(dir, { recursive: true });
+    const filePath = join(dir, `export-${Date.now()}.json`);
+    writeFileSync(filePath, text, "utf8");
+    const preview = text.slice(0, 4000);
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify(
+            {
+              spilledToFile: true,
+              path: filePath,
+              bytes: Buffer.byteLength(text, "utf8"),
+              hint: "导出过大，已写入本地 JSON。请用 Read 工具读取 path 后继续写页面。",
+              preview,
+            },
+            null,
+            2,
+          ),
+        },
+      ],
+    };
+  }
+
   return {
-    content: [
-      {
-        type: "text" as const,
-        text:
-          typeof data === "string" ? data : JSON.stringify(data, null, 2),
-      },
-    ],
+    content: [{ type: "text" as const, text }],
   };
 }
 

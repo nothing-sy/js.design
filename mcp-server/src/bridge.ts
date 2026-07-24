@@ -38,7 +38,17 @@ export class Bridge {
       this.wss = wss;
 
       wss.on("listening", () => resolve(this.port));
-      wss.on("error", reject);
+      wss.on("error", (err: NodeJS.ErrnoException) => {
+        if (err.code === "EADDRINUSE") {
+          reject(
+            new Error(
+              `端口 ${this.port} 已被占用。请结束占用进程后重启 MCP，或设置环境变量 JSDESIGN_MCP_PORT 换端口。`,
+            ),
+          );
+          return;
+        }
+        reject(err);
+      });
 
       wss.on("connection", (ws) => {
         const clientId = randomUUID();

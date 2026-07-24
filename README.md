@@ -33,20 +33,20 @@ npm run build
 
 > MCP Server 需先被 Cursor 拉起（打开带本 MCP 配置的项目即可），插件才会连上 `ws://127.0.0.1:3847`。
 
-## 配置 Cursor
+## 配置 Cursor（全局）
 
-将以下内容写入项目 [`.cursor/mcp.json`](.cursor/mcp.json)（路径按本机修改）：
+已写入用户全局配置：`C:\Users\Administrator\.cursor\mcp.json`
 
 ```json
-{
-  "mcpServers": {
-    "jsdesign": {
-      "command": "node",
-      "args": ["D:/projects/js.design/mcp-server/dist/index.js"]
-    }
-  }
+"jsdesign": {
+  "command": "node",
+  "args": ["D:/projects/js.design/mcp-server/dist/index.js"]
 }
 ```
+
+任意工作区均可使用。修改后请在 Cursor **Settings → MCP** 中刷新 / 重启 `jsdesign`。
+
+项目内 [`.cursor/mcp.json`](.cursor/mcp.json) 仅作仓库示例；与全局同名时，**项目级优先**。
 
 可选环境变量：`JSDESIGN_MCP_PORT`（默认 `3847`）。若改端口，插件面板里的 WebSocket 地址需同步修改。
 
@@ -76,11 +76,27 @@ npm run build
 
 导出选项：`maxDepth`、`skipHidden`（默认 true）、`skipInstanceChildren`（默认 true）。
 
+超大约 400KB 的导出会写入临时文件（`%TEMP%/jsdesign-mcp/export-*.json`），工具返回 `path` 供 Agent 读取。
+
+## 导出数据模型（面向写页面）
+
+每个节点大致包含：
+
+- **身份**：`id`, `name`, `type`, `visible`
+- **几何**：`x`, `y`, `width`, `height`, `rotation`
+- **布局**：`layoutMode`, `padding*`, `itemSpacing`, `primaryAxis*` / `counterAxis*` 等
+- **视觉**：`fills`, `strokes`, `cornerRadius`, `effects`, `opacity`
+- **文字**：`characters`, `fontName`, `fontSize`, `lineHeight`, `textAlign*`
+- **层级**：`children[]`（INSTANCE 默认可跳过内部）
+
+类型定义见 [`mcp-server/src/schema.ts`](mcp-server/src/schema.ts) 中的 `DesignNode`。
+
 ## 目录
 
 ```
 plugin/           # 即时设计插件（manifest + code.js + ui.html）
 mcp-server/       # Node MCP Server + WebSocket 桥
+  src/schema.ts   # RPC + DesignNode 导出类型
 .cursor/mcp.json  # Cursor 配置示例
 ```
 
@@ -90,6 +106,7 @@ mcp-server/       # Node MCP Server + WebSocket 桥
 - 无法实时监听画布编辑；每次工具调用拉取最新快照
 - 同时只能运行一个插件
 - 一期不导出位图资源，以结构与样式数值为主
+- 不做写回画布
 
 ## License
 
