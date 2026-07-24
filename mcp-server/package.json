@@ -1,0 +1,25 @@
+{
+  "name": "jsdesign-mcp-server",
+  "version": "0.1.0",
+  "description": "MCP server that bridges Instant Design (js.design) plugin to Cursor/Claude",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "jsdesign-mcp": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc && node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "ws": "^8.18.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.13",
+    "typescript": "^5.7.0"
+  }
+}

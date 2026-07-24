@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>JsDesign MCP Bridge</title>
+  <style>
+    :root {
+      --bg: #1a1b1e;
+      --fg: #e8e8ea;
+      --muted: #9a9aa3;
+      --ok: #3ecf8e;
+      --bad: #f07178;
+      --card: #25262b;
+      --accent: #5b8cff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 14px;
+      font: 12px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+    }
+    h1 {
+      margin: 0 0 10px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--bad);
+      flex-shrink: 0;
+    }
+    .dot.ok { background: var(--ok); }
+    .status { color: var(--muted); }
+    .status.ok { color: var(--ok); }
+    label {
+      display: block;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    input {
+      width: 100%;
+      padding: 6px 8px;
+      border: 1px solid #3a3b42;
+      border-radius: 6px;
+      background: var(--card);
+      color: var(--fg);
+      outline: none;
+    }
+    input:focus { border-color: var(--accent); }
+    button {
+      margin-top: 10px;
+      width: 100%;
+      padding: 7px 10px;
+      border: none;
+      border-radius: 6px;
+      background: var(--accent);
+      color: #fff;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    button:hover { filter: brightness(1.08); }
+    .hint {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+    code { color: #c3d4ff; }
+  </style>
+</head>
+<body>
+  <h1>JsDesign MCP Bridge</h1>
+  <div class="row">
+    <span class="dot" id="dot"></span>
+    <span class="status" id="status">未连接</span>
+  </div>
+  <label for="url">MCP WebSocket</label>
+  <input id="url" value="ws://127.0.0.1:3847" />
+  <button id="reconnect" type="button">重新连接</button>
+  <p class="hint">
+    在 Cursor 中配置并启动 MCP 后，此处应显示「已连接」。<br />
+    推荐：选中目标画板 → Agent 调用 <code>export_selection</code> 写页面。
+  </p>
+
+  <script>
+    const statusEl = document.getElementById("status");
+    const dotEl = document.getElementById("dot");
+    const urlEl = document.getElementById("url");
+    const reconnectBtn = document.getElementById("reconnect");
+
+    let ws = null;
+    let heartbeatTimer = null;
+    let reconnectTimer = null;
+    let docInfo = { documentName: "", pageName: "" };
+
+    function setStatus(ok, text) {
+      statusEl.textContent = text;
+      statusEl.className = "status" + (ok ? " ok" : "");
+      dotEl.className = "dot" + (ok ? " ok" : "");
+    }
+
+    function connect() {
+      clearTimeout(reconnectTimer);
+      if (ws) {
+        try { ws.close(); } catch (_) {}
+        ws = null;
+      }
+
+      const url = urlEl.value.trim() || "ws://127.0.0.1:3847";
+      setStatus(false, "连接中…");
+
+      try {
+        ws = new WebSocket(url);
+      } catch (e) {
+        setStatus(false, "连接失败");
+        scheduleReconnect();
+        return;
+      }
+
+      ws.onopen = () => {
+        setStatus(true, "已连接");
+        ws.send(JSON.stringify({
+          type: "hello",
+          clientId: "plugin",
+          documentName: docInfo.documentName,
+          pageName: docInfo.pageName,
+        }));
+        startHeartbeat();
+      };
+
+      ws.onclose = () => {
+        setStatus(false, "未连接");
+        stopHeartbeat();
+        scheduleReconnect();
+      };
+
+      ws.onerror = () => {
+        setStatus(false, "连接错误");
+      };
+
+      ws.onmessage = (event) => {
+        let msg;
+        try { msg = JSON.parse(event.data); } catch (_) { return; }
+
+        if (msg.type === "hello") {
+          // server assigned id — ignore
+          return;
+        }
+
+        if (msg.type === "rpc") {
+          // Forward to main thread
+          parent.postMessage({
+            pluginMessage: {
+              id: msg.id,
+              method: msg.method,
+              params: msg.params || {},
+            },
+          }, "*");
+        }
+      };
+    }
+
+    function scheduleReconnect() {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = setTimeout(connect, 2000);
+    }
+
+    function startHeartbeat() {
+      stopHeartbeat();
+      heartbeatTimer = setInterval(() => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "heartbeat", ts: Date.now() }));
+        }
+      }, 15000);
+    }
+
+    function stopHeartbeat() {
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+    }
+
+    // Messages from main thread
+    onmessage = (event) => {
+      const msg = event.data && event.data.pluginMessage;
+      if (!msg) return;
+
+      if (msg.type === "doc-info") {
+        docInfo.documentName = msg.documentName || "";
+        docInfo.pageName = msg.pageName || "";
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: "hello",
+            clientId: "plugin",
+            documentName: docInfo.documentName,
+            pageName: docInfo.pageName,
+          }));
+        }
+        return;
+      }
+
+      if (msg.type === "rpc-result") {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify(msg));
+        }
+      }
+    };
+
+    reconnectBtn.onclick = () => connect();
+    connect();
+  </script>
+</body>
+</html>

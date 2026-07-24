@@ -1,0 +1,11 @@
+{
+  "name": "js.design",
+  "version": "0.1.0",
+  "private": true,
+  "description": "即时设计 MCP 插件：导出设计稿节点数据，供 Agent 写页面",
+  "scripts": {
+    "build": "npm run build --prefix mcp-server",
+    "dev": "npm run build --prefix mcp-server && node mcp-server/dist/index.js",
+    "start": "node mcp-server/dist/index.js"
+  }
+}

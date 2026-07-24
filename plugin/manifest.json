@@ -1,0 +1,7 @@
+{
+  "name": "JsDesign MCP Bridge",
+  "id": "jsdesign-mcp-bridge",
+  "api": "1.0.0",
+  "main": "code.js",
+  "ui": "ui.html"
+}
