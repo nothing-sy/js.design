@@ -1,16 +1,46 @@
 {
   "name": "jsdesign-mcp-server",
   "version": "0.1.0",
-  "description": "MCP server that bridges Instant Design (js.design) plugin to Cursor/Claude",
+  "description": "MCP server that bridges Instant Design (js.design) plugin to Cursor/Claude for design-to-code",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
     "jsdesign-mcp": "dist/index.js"
   },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc",
+    "prepublishOnly": "npm run build",
     "start": "node dist/index.js",
     "dev": "tsc && node dist/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "jsdesign",
+    "instant-design",
+    "cursor",
+    "design-to-code"
+  ],
+  "author": "nothing-sy",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nothing-sy/js.design.git",
+    "directory": "mcp-server"
+  },
+  "homepage": "https://github.com/nothing-sy/js.design#readme",
+  "bugs": {
+    "url": "https://github.com/nothing-sy/js.design/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
