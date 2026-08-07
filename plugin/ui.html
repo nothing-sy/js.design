@@ -25,6 +25,14 @@
       margin: 0 0 10px;
       font-size: 13px;
       font-weight: 600;
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+    .ver {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--muted);
     }
     .row {
       display: flex;
@@ -78,7 +86,7 @@
   </style>
 </head>
 <body>
-  <h1>JsDesign MCP Bridge</h1>
+  <h1>JsDesign MCP Bridge <span class="ver">v2.0.0</span></h1>
   <div class="row">
     <span class="dot" id="dot"></span>
     <span class="status" id="status">未连接</span>

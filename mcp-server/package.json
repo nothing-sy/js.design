@@ -1,6 +1,6 @@
 {
   "name": "jsdesign-mcp-server",
-  "version": "0.2.1",
+  "version": "2.0.0",
   "description": "MCP server that bridges Instant Design (js.design) plugin to Cursor/Claude for design-to-code",
   "type": "module",
   "main": "dist/index.js",

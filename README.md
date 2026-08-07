@@ -3,7 +3,8 @@
 即时设计 MCP：导出设计稿节点树，供 Cursor Agent 写页面（只读，不写回画布）。
 
 - 仓库：https://github.com/nothing-sy/js.design
-- npm：[`jsdesign-mcp-server`](https://www.npmjs.com/package/jsdesign-mcp-server)
+- npm：[`jsdesign-mcp-server@2.0.0`](https://www.npmjs.com/package/jsdesign-mcp-server)
+- 插件 / npm 版本：`2.0.0`（见 [`plugin/manifest.json`](plugin/manifest.json)）
 - 版本日志：[mcp-server/CHANGELOG.md](mcp-server/CHANGELOG.md)
 
 **环境要求**：Node.js 18+ · [即时设计桌面端](https://js.design/download) · [Cursor](https://cursor.com)
@@ -34,7 +35,7 @@ Cursor MCP stdio ──agent 接入──► 同上 daemon（Cursor 启停不立
 ## 1. 安装包
 
 ```bash
-npm i -g jsdesign-mcp-server
+npm i -g jsdesign-mcp-server@2.0.0
 ```
 
 安装后可直接使用命令：
@@ -200,7 +201,7 @@ MCP 绿灯后，再在即时设计里装插件并连上 WebSocket。
 | 无选中节点 | 先在画布选中目标 Frame |
 | 端口占用（非本 daemon） | 结束占用进程，或设 `JSDESIGN_MCP_PORT` 换端口，并同步改插件面板里的地址 |
 | 旧版 MCP 占着 3847 | 结束旧 `node`/`jsdesign-mcp` 进程后执行 `jsdesign-mcp daemon` |
-| 命令找不到 | 确认已执行 `npm i -g jsdesign-mcp-server`，命令名为 `jsdesign-mcp` |
+| 命令找不到 | 确认已执行 `npm i -g jsdesign-mcp-server@2.0.0`，命令名为 `jsdesign-mcp` |
 
 ---
 

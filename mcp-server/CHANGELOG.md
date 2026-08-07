@@ -4,6 +4,18 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [2.0.0] - 2026-08-07
+
+### Changed
+
+- 主版本号统一为 `2.0.0`：`jsdesign-mcp-server`、根 `package.json`、插件 `manifest.version` / `manifest.api`、MCP 自报版本
+- 插件面板展示 `v2.0.0`
+- 文档安装命令改为 `npm i -g jsdesign-mcp-server@2.0.0`
+
+### Notes
+
+- 包含 `0.2.x` 的 daemon 架构与空闲自动退出（`JSDESIGN_MCP_IDLE_MS`，默认 15 分钟）
+
 ## [0.2.1] - 2026-08-07
 
 ### Added

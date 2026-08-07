@@ -17,7 +17,7 @@ type Pending = {
 };
 
 /**
- * MCP stdio 进程侧：作为 agent 连接到常驻 daemon，转发工具调用。
+ * MCP stdio 进程侧：作为 agent 连接到 daemon，转发工具调用。
  */
 export class AgentClient implements BridgeLike {
   private ws: WebSocket | null = null;

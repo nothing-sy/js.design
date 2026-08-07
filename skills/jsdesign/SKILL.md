@@ -25,7 +25,7 @@ get_connection_status（未连通 → 请用户开插件/选画板）
 
 ## 0. MCP 连通（前置，必须）
 
-命名空间：`user-jsdesign`。WebSocket 桥由 `jsdesign-mcp daemon` 常驻提供；Cursor MCP 仅 attach，一般无需关心端口。
+命名空间：`user-jsdesign`。WebSocket 桥由 `jsdesign-mcp daemon` 提供（无连接空闲 15 分钟后自动退出）；Cursor MCP 仅 attach，一般无需关心端口。
 
 1. 调用 `get_connection_status`（或任意 jsdesign 工具探测）。
 2. **未连通**：提示用户在即时设计中打开「JsDesign MCP Bridge」、保持面板打开，并选中目标画板；必要时请用户在 Cursor 中开关一次 jsdesign MCP。

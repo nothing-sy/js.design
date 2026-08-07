@@ -16,7 +16,7 @@
 ### 1. 全局安装
 
 ```bash
-npm i -g jsdesign-mcp-server
+npm i -g jsdesign-mcp-server@2.0.0
 ```
 
 ### 2. 配置 Cursor MCP

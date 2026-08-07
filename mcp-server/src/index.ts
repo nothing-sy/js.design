@@ -183,7 +183,7 @@ async function runMcp(): Promise<void> {
 
   const server = new McpServer({
     name: "jsdesign-mcp",
-    version: "0.1.0",
+    version: "2.0.0",
   });
 
   registerTools(server, client);
