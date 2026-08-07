@@ -4,10 +4,12 @@
 
 完整文档：https://github.com/nothing-sy/js.design
 
+版本日志：[CHANGELOG.md](CHANGELOG.md)
+
 ## 架构
 
-- **`jsdesign-mcp daemon`**：常驻 WebSocket 桥，固定监听 `ws://127.0.0.1:3847`（可用 `JSDESIGN_MCP_PORT`），供即时设计插件连接。
-- **`jsdesign-mcp`（默认）**：Cursor 拉起的 stdio MCP；作为 agent 接入已有 daemon。若 daemon 未运行会自动 detached 拉起，**退出 Cursor 不会关掉 daemon**。
+- **`jsdesign-mcp daemon`**：WebSocket 桥，固定监听 `ws://127.0.0.1:3847`（可用 `JSDESIGN_MCP_PORT`），供即时设计插件连接。无任何客户端（agent + 插件）持续 15 分钟后自动退出（可用 `JSDESIGN_MCP_IDLE_MS` 覆盖；`0` 禁用）。
+- **`jsdesign-mcp`（默认）**：Cursor 拉起的 stdio MCP；作为 agent 接入已有 daemon。若 daemon 未运行会自动 detached 拉起；**退出 Cursor 不会立刻关掉 daemon**（仍保留空闲宽限，便于插件保活）。
 
 ## 快速开始
 

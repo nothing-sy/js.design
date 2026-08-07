@@ -4,6 +4,7 @@
 
 - 仓库：https://github.com/nothing-sy/js.design
 - npm：[`jsdesign-mcp-server`](https://www.npmjs.com/package/jsdesign-mcp-server)
+- 版本日志：[mcp-server/CHANGELOG.md](mcp-server/CHANGELOG.md)
 
 **环境要求**：Node.js 18+ · [即时设计桌面端](https://js.design/download) · [Cursor](https://cursor.com)
 
@@ -14,7 +15,7 @@
 ```text
 ① 全局安装 MCP 包
     ↓
-② Cursor 配置 jsdesign MCP（首次会自动拉起常驻 daemon，占用 3847）
+② Cursor 配置 jsdesign MCP（首次会自动拉起 daemon，占用 3847）
     ↓
 ③ 在即时设计安装并运行插件（显示「已连接」）
     ↓
@@ -24,8 +25,8 @@
 架构：
 
 ```text
-即时设计插件 ──WebSocket :3847──► jsdesign-mcp daemon（常驻）
-Cursor MCP stdio ──agent 接入──► 同上 daemon（Cursor 启停不关端口）
+即时设计插件 ──WebSocket :3847──► jsdesign-mcp daemon
+Cursor MCP stdio ──agent 接入──► 同上 daemon（Cursor 启停不立刻关端口）
 ```
 
 ---
@@ -90,10 +91,11 @@ jsdesign-mcp
 2. 找到 **jsdesign**，状态应为**绿灯**
 3. 若为红灯：检查 `mcp.json` 语法，以及全局命令 `jsdesign-mcp` 是否可用
 
-默认 WebSocket：`ws://127.0.0.1:3847`，由 **daemon 常驻占用**（与 Cursor MCP stdio 进程分离）。  
-首次启用 MCP 时会自动 `spawn` daemon；关闭 Cursor / 重启 MCP **不会**关掉 3847，即时设计插件可保持连接。
+默认 WebSocket：`ws://127.0.0.1:3847`，由 **daemon 占用**（与 Cursor MCP stdio 进程分离）。  
+首次启用 MCP 时会自动 `spawn` daemon；关闭 Cursor / 重启 MCP **不会立刻**关掉 3847，即时设计插件可继续连着。  
+当 **没有任何连接**（Cursor MCP agent 与即时设计插件均断开）持续 **15 分钟**后，daemon 会自动退出；下次启用 MCP 会再自动拉起。可用 `JSDESIGN_MCP_IDLE_MS` 覆盖空闲时长（毫秒；设为 `0` 禁用自动退出）。
 
-可选：登录后手动预热，或写入开机启动：
+可选：登录后手动预热：
 
 ```bash
 jsdesign-mcp daemon
@@ -134,7 +136,7 @@ MCP 绿灯后，再在即时设计里装插件并连上 WebSocket。
 2. 确认端口与 `mcp.json` / `JSDESIGN_MCP_PORT` 一致
 3. 点击插件面板的 **重新连接**
 
-> 使用期间请保持插件面板打开。daemon 常驻后，不必每次开 Cursor 再等端口重启。
+> 使用期间请保持插件面板打开。有连接时 daemon 不会因 Cursor 启停而立刻退出；全部断开并空闲 15 分钟后才会自动退出。
 
 ---
 

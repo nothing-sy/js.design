@@ -49,9 +49,20 @@ export class Bridge implements BridgeLike {
   private clients = new Map<string, ConnectedClient>();
   private pending = new Map<string, Pending>();
   private port: number;
+  private clientsChanged: ((count: number) => void) | null = null;
 
   constructor(port = DEFAULT_WS_PORT) {
     this.port = port;
+  }
+
+  /** Notify when any WebSocket client connects or disconnects (agent + plugin). */
+  onClientsChanged(handler: (count: number) => void): void {
+    this.clientsChanged = handler;
+  }
+
+  /** Total open sockets (including pre-hello); used for idle shutdown. */
+  clientCount(): number {
+    return this.clients.size;
   }
 
   start(): Promise<number> {
@@ -81,17 +92,18 @@ export class Bridge implements BridgeLike {
           lastSeen: Date.now(),
         };
         this.clients.set(clientId, client);
+        this.emitClientsChanged();
 
         ws.on("message", (raw) => {
           this.onMessage(client, raw.toString());
         });
 
         ws.on("close", () => {
-          this.clients.delete(clientId);
+          this.removeClient(clientId);
         });
 
         ws.on("error", () => {
-          this.clients.delete(clientId);
+          this.removeClient(clientId);
         });
 
         this.send(ws, {
@@ -118,6 +130,15 @@ export class Bridge implements BridgeLike {
     this.clients.clear();
     this.wss?.close();
     this.wss = null;
+  }
+
+  private removeClient(clientId: string): void {
+    if (!this.clients.delete(clientId)) return;
+    this.emitClientsChanged();
+  }
+
+  private emitClientsChanged(): void {
+    this.clientsChanged?.(this.clients.size);
   }
 
   async listClients(): Promise<BridgeClientInfo[]> {

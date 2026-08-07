@@ -8,10 +8,16 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { AgentClient, probeDaemon } from "./agent-client.js";
 import { Bridge } from "./bridge.js";
-import { DEFAULT_WS_PORT } from "./schema.js";
+import { DEFAULT_IDLE_MS, DEFAULT_WS_PORT } from "./schema.js";
 import { registerTools } from "./tools.js";
 
 const port = Number(process.env.JSDESIGN_MCP_PORT || DEFAULT_WS_PORT);
+const idleMs = Number(
+  process.env.JSDESIGN_MCP_IDLE_MS !== undefined &&
+    process.env.JSDESIGN_MCP_IDLE_MS !== ""
+    ? process.env.JSDESIGN_MCP_IDLE_MS
+    : DEFAULT_IDLE_MS,
+);
 const selfPath = fileURLToPath(import.meta.url);
 
 function daemonDir(): string {
@@ -40,6 +46,12 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+function formatIdleDuration(ms: number): string {
+  if (ms % 60_000 === 0) return `${ms / 60_000}m`;
+  if (ms % 1_000 === 0) return `${ms / 1_000}s`;
+  return `${ms}ms`;
+}
+
 async function runDaemon(): Promise<void> {
   if (await probeDaemon(port, 1500)) {
     console.error(
@@ -49,6 +61,37 @@ async function runDaemon(): Promise<void> {
   }
 
   const bridge = new Bridge(port);
+  let idleTimer: NodeJS.Timeout | null = null;
+
+  const clearIdleTimer = () => {
+    if (idleTimer) {
+      clearTimeout(idleTimer);
+      idleTimer = null;
+    }
+  };
+
+  const shutdown = (reason?: string) => {
+    clearIdleTimer();
+    if (reason) {
+      console.error(`[jsdesign-mcp] ${reason}`);
+    }
+    clearPid();
+    bridge.stop();
+    process.exit(0);
+  };
+
+  const armIdleTimer = () => {
+    clearIdleTimer();
+    if (idleMs <= 0) return;
+    idleTimer = setTimeout(() => {
+      if (bridge.clientCount() > 0) return;
+      shutdown(
+        `idle for ${formatIdleDuration(idleMs)} with no clients — exiting`,
+      );
+    }, idleMs);
+    idleTimer.unref?.();
+  };
+
   try {
     const listenPort = await bridge.start();
     writePid();
@@ -56,6 +99,20 @@ async function runDaemon(): Promise<void> {
       `[jsdesign-mcp] daemon WebSocket on ws://127.0.0.1:${listenPort}`,
     );
     console.error("[jsdesign-mcp] Waiting for Instant Design plugin / MCP agents…");
+    if (idleMs > 0) {
+      console.error(
+        `[jsdesign-mcp] will exit after ${formatIdleDuration(idleMs)} with no clients`,
+      );
+    }
+
+    bridge.onClientsChanged((count) => {
+      if (count > 0) {
+        clearIdleTimer();
+      } else {
+        armIdleTimer();
+      }
+    });
+    armIdleTimer();
   } catch (err) {
     if (await probeDaemon(port, 1500)) {
       console.error(
@@ -66,13 +123,8 @@ async function runDaemon(): Promise<void> {
     throw err;
   }
 
-  const shutdown = () => {
-    clearPid();
-    bridge.stop();
-    process.exit(0);
-  };
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", () => shutdown());
+  process.on("SIGTERM", () => shutdown());
 }
 
 function spawnDaemonDetached(): void {
