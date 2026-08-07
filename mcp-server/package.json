@@ -17,7 +17,8 @@
     "start": "node dist/index.js",
     "daemon": "node dist/index.js daemon",
     "dev": "tsc && node dist/index.js",
-    "dev:daemon": "tsc && node dist/index.js daemon"
+    "dev:daemon": "tsc && node dist/index.js daemon",
+    "release": "node scripts/publish.mjs"
   },
   "engines": {
     "node": ">=18"

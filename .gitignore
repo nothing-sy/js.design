@@ -4,3 +4,4 @@ mcp-server/dist/
 .DS_Store
 design-data.json
 .env
+mcp-server/.npm-token
