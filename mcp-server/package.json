@@ -1,6 +1,6 @@
 {
   "name": "jsdesign-mcp-server",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "MCP server that bridges Instant Design (js.design) plugin to Cursor/Claude for design-to-code",
   "type": "module",
   "main": "dist/index.js",
@@ -15,7 +15,9 @@
     "build": "tsc",
     "prepublishOnly": "npm run build",
     "start": "node dist/index.js",
-    "dev": "tsc && node dist/index.js"
+    "daemon": "node dist/index.js daemon",
+    "dev": "tsc && node dist/index.js",
+    "dev:daemon": "tsc && node dist/index.js daemon"
   },
   "engines": {
     "node": ">=18"

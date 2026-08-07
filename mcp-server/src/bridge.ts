@@ -1,9 +1,13 @@
 import { WebSocketServer, WebSocket } from "ws";
 import { randomUUID } from "node:crypto";
 import {
+  AGENT_METHOD_LIST_CLIENTS,
   DEFAULT_WS_PORT,
+  type AgentRpcRequest,
+  type AgentRpcResponse,
   type BridgeHello,
   type BridgeMessage,
+  type ClientRole,
   type RpcRequest,
   type RpcResponse,
 } from "./schema.js";
@@ -14,17 +18,35 @@ type Pending = {
   timer: NodeJS.Timeout;
 };
 
-export type PluginClient = {
+export type BridgeClientInfo = {
   id: string;
-  ws: WebSocket;
   documentName?: string;
   pageName?: string;
   lastSeen: number;
 };
 
-export class Bridge {
+export type ConnectedClient = {
+  id: string;
+  ws: WebSocket;
+  role: ClientRole;
+  documentName?: string;
+  pageName?: string;
+  lastSeen: number;
+};
+
+/** Shared surface used by MCP tools (in-process Bridge or remote AgentClient). */
+export interface BridgeLike {
+  listClients(): Promise<BridgeClientInfo[]>;
+  call(
+    method: string,
+    params?: Record<string, unknown>,
+    options?: { clientId?: string; timeoutMs?: number },
+  ): Promise<unknown>;
+}
+
+export class Bridge implements BridgeLike {
   private wss: WebSocketServer | null = null;
-  private clients = new Map<string, PluginClient>();
+  private clients = new Map<string, ConnectedClient>();
   private pending = new Map<string, Pending>();
   private port: number;
 
@@ -42,7 +64,7 @@ export class Bridge {
         if (err.code === "EADDRINUSE") {
           reject(
             new Error(
-              `端口 ${this.port} 已被占用。请结束占用进程后重启 MCP，或设置环境变量 JSDESIGN_MCP_PORT 换端口。`,
+              `端口 ${this.port} 已被占用。若已是 jsdesign-mcp daemon 可忽略；否则结束占用进程或设置 JSDESIGN_MCP_PORT。`,
             ),
           );
           return;
@@ -52,9 +74,10 @@ export class Bridge {
 
       wss.on("connection", (ws) => {
         const clientId = randomUUID();
-        const client: PluginClient = {
+        const client: ConnectedClient = {
           id: clientId,
           ws,
+          role: "plugin",
           lastSeen: Date.now(),
         };
         this.clients.set(clientId, client);
@@ -71,7 +94,6 @@ export class Bridge {
           this.clients.delete(clientId);
         });
 
-        // Tell plugin its assigned id (optional)
         this.send(ws, {
           type: "hello",
           clientId,
@@ -98,26 +120,25 @@ export class Bridge {
     this.wss = null;
   }
 
-  listClients(): Array<{
-    id: string;
-    documentName?: string;
-    pageName?: string;
-    lastSeen: number;
-  }> {
-    return [...this.clients.values()].map((c) => ({
-      id: c.id,
-      documentName: c.documentName,
-      pageName: c.pageName,
-      lastSeen: c.lastSeen,
-    }));
+  async listClients(): Promise<BridgeClientInfo[]> {
+    return [...this.clients.values()]
+      .filter((c) => c.role === "plugin")
+      .map((c) => ({
+        id: c.id,
+        documentName: c.documentName,
+        pageName: c.pageName,
+        lastSeen: c.lastSeen,
+      }));
   }
 
-  getPrimaryClient(clientId?: string): PluginClient | null {
+  getPrimaryPlugin(clientId?: string): ConnectedClient | null {
     if (clientId) {
-      return this.clients.get(clientId) ?? null;
+      const c = this.clients.get(clientId);
+      return c && c.role === "plugin" ? c : null;
     }
-    const all = [...this.clients.values()];
-    return all[0] ?? null;
+    return (
+      [...this.clients.values()].find((c) => c.role === "plugin") ?? null
+    );
   }
 
   async call(
@@ -125,7 +146,7 @@ export class Bridge {
     params: Record<string, unknown> = {},
     options: { clientId?: string; timeoutMs?: number } = {},
   ): Promise<unknown> {
-    const client = this.getPrimaryClient(options.clientId);
+    const client = this.getPrimaryPlugin(options.clientId);
     if (!client) {
       throw new Error(
         "即时设计插件未连接。请在即时设计中打开「JsDesign MCP Bridge」插件，并确认状态为「已连接」。",
@@ -148,7 +169,7 @@ export class Bridge {
     return resultPromise;
   }
 
-  private onMessage(client: PluginClient, text: string): void {
+  private onMessage(client: ConnectedClient, text: string): void {
     let msg: BridgeMessage;
     try {
       msg = JSON.parse(text) as BridgeMessage;
@@ -159,12 +180,23 @@ export class Bridge {
     client.lastSeen = Date.now();
 
     if (msg.type === "hello") {
-      client.documentName = msg.documentName;
-      client.pageName = msg.pageName;
+      if (msg.role === "agent") {
+        client.role = "agent";
+      } else {
+        client.role = "plugin";
+        client.documentName = msg.documentName;
+        client.pageName = msg.pageName;
+      }
       return;
     }
 
     if (msg.type === "heartbeat") {
+      return;
+    }
+
+    if (msg.type === "agent-rpc") {
+      if (client.role !== "agent") return;
+      void this.handleAgentRpc(client, msg);
       return;
     }
 
@@ -179,6 +211,37 @@ export class Bridge {
       } else {
         pending.reject(new Error(res.error || "插件返回错误"));
       }
+    }
+  }
+
+  private async handleAgentRpc(
+    agent: ConnectedClient,
+    msg: AgentRpcRequest,
+  ): Promise<void> {
+    const reply = (payload: Omit<AgentRpcResponse, "type" | "id">) => {
+      this.send(agent.ws, {
+        type: "agent-rpc-result",
+        id: msg.id,
+        ...payload,
+      } satisfies AgentRpcResponse);
+    };
+
+    try {
+      if (msg.method === AGENT_METHOD_LIST_CLIENTS) {
+        const clients = await this.listClients();
+        reply({ ok: true, result: clients });
+        return;
+      }
+
+      const result = await this.call(msg.method, msg.params || {}, {
+        clientId: msg.clientId,
+      });
+      reply({ ok: true, result });
+    } catch (e) {
+      reply({
+        ok: false,
+        error: e instanceof Error ? e.message : String(e),
+      });
     }
   }
 

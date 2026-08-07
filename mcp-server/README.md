@@ -4,6 +4,11 @@
 
 完整文档：https://github.com/nothing-sy/js.design
 
+## 架构
+
+- **`jsdesign-mcp daemon`**：常驻 WebSocket 桥，固定监听 `ws://127.0.0.1:3847`（可用 `JSDESIGN_MCP_PORT`），供即时设计插件连接。
+- **`jsdesign-mcp`（默认）**：Cursor 拉起的 stdio MCP；作为 agent 接入已有 daemon。若 daemon 未运行会自动 detached 拉起，**退出 Cursor 不会关掉 daemon**。
+
 ## 快速开始
 
 ### 1. 配置 Cursor MCP
@@ -37,14 +42,21 @@ npm i -g jsdesign-mcp-server
 }
 ```
 
-在 Cursor **Settings → MCP** 中确认 **jsdesign** 为绿灯。默认监听 `ws://127.0.0.1:3847`（可用环境变量 `JSDESIGN_MCP_PORT` 修改）。
+在 Cursor **Settings → MCP** 中确认 **jsdesign** 为绿灯。
+
+可选预热守护进程：
+
+```bash
+jsdesign-mcp daemon
+# 或：npm run daemon
+```
 
 ### 2. 导入即时设计插件
 
 - **推荐**：即时设计 → **插件** → 搜索 **JsDesign MCP Bridge** → 安装并运行
 - **开发者导入**：克隆 https://github.com/nothing-sy/js.design ，再 **插件 → 开发者 → 导入插件** → 选择 `plugin/manifest.json`
 
-面板显示「已连接」即可。
+面板显示「已连接」即可（地址默认 `ws://127.0.0.1:3847`）。
 
 ### 3. 使用
 

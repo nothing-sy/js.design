@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { Bridge } from "./bridge.js";
+import type { BridgeLike } from "./bridge.js";
 import type { AssetPayload, DesignNode } from "./schema.js";
 
 /** Spill oversized export JSON to a temp file so Agent can Read the path. */
@@ -230,12 +230,12 @@ const exportCommonShape = {
   clientId: z.string().optional().describe("可选客户端 id"),
 };
 
-export function registerTools(server: McpServer, bridge: Bridge): void {
+export function registerTools(server: McpServer, bridge: BridgeLike): void {
   server.tool(
     "get_connection_status",
     "检查即时设计 MCP 插件是否已连接，以及当前文档/页面信息。",
     async () => {
-      const clients = bridge.listClients();
+      const clients = await bridge.listClients();
       return textResult({
         connected: clients.length > 0,
         clientCount: clients.length,

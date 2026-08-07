@@ -15,9 +15,13 @@ export type RpcResponse = {
   error?: string;
 };
 
+export type ClientRole = "plugin" | "agent";
+
 export type BridgeHello = {
   type: "hello";
   clientId: string;
+  /** Agent 客户端声明 role:"agent"；缺省视为 plugin（兼容旧插件） */
+  role?: ClientRole;
   documentName?: string;
   pageName?: string;
 };
@@ -27,9 +31,36 @@ export type BridgeHeartbeat = {
   ts: number;
 };
 
-export type BridgeMessage = RpcRequest | RpcResponse | BridgeHello | BridgeHeartbeat;
+/** MCP stdio 进程 → daemon：转发到插件的 RPC */
+export type AgentRpcRequest = {
+  type: "agent-rpc";
+  id: string;
+  method: string;
+  params?: Record<string, unknown>;
+  clientId?: string;
+};
+
+/** daemon → MCP stdio 进程 */
+export type AgentRpcResponse = {
+  type: "agent-rpc-result";
+  id: string;
+  ok: boolean;
+  result?: unknown;
+  error?: string;
+};
+
+export type BridgeMessage =
+  | RpcRequest
+  | RpcResponse
+  | BridgeHello
+  | BridgeHeartbeat
+  | AgentRpcRequest
+  | AgentRpcResponse;
 
 export const DEFAULT_WS_PORT = 3847;
+
+/** Built-in agent-rpc method: list plugin clients (not forwarded to plugin). */
+export const AGENT_METHOD_LIST_CLIENTS = "list_clients";
 
 /**
  * Design-to-code export JSON shapes (plugin → MCP → Agent).
