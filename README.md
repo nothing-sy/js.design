@@ -12,7 +12,7 @@
 ## 整体流程
 
 ```text
-① 安装 MCP 包
+① 全局安装 MCP 包
     ↓
 ② Cursor 配置 jsdesign MCP（首次会自动拉起常驻 daemon，占用 3847）
     ↓
@@ -32,20 +32,6 @@ Cursor MCP stdio ──agent 接入──► 同上 daemon（Cursor 启停不关
 
 ## 1. 安装包
 
-任选一种方式即可。
-
-### 方式 A：无需预先安装（推荐）
-
-Cursor 启动 MCP 时用 `npx` 自动拉取并运行，**不必手动安装**：
-
-```bash
-npx -y jsdesign-mcp-server
-```
-
-（一般不用单独执行；写进 `mcp.json` 后由 Cursor 自动调用。）
-
-### 方式 B：全局安装
-
 ```bash
 npm i -g jsdesign-mcp-server
 ```
@@ -54,27 +40,6 @@ npm i -g jsdesign-mcp-server
 
 ```bash
 jsdesign-mcp
-```
-
-### 方式 C：本地克隆开发
-
-```bash
-git clone https://github.com/nothing-sy/js.design.git
-cd js.design/mcp-server
-npm install
-npm run build
-```
-
-本地启动：
-
-```bash
-# 常驻 WebSocket 守护进程（推荐先开一次）
-npm run daemon
-# 或：node dist/index.js daemon
-
-# Cursor 用的 MCP 入口（会 attach 到已有 daemon；没有则自动拉起）
-npm start
-# 或：node dist/index.js
 ```
 
 > npm 包名是 **`jsdesign-mcp-server`**；CLI 命令名是 **`jsdesign-mcp`**，不要混用。
@@ -94,41 +59,11 @@ npm start
 
 ### 2.2 写入配置
 
-**用 npx（推荐，对应安装方式 A）：**
-
-```json
-{
-  "mcpServers": {
-    "jsdesign": {
-      "command": "npx",
-      "args": ["-y", "jsdesign-mcp-server"]
-    }
-  }
-}
-```
-
-**用全局命令（对应安装方式 B）：**
-
 ```json
 {
   "mcpServers": {
     "jsdesign": {
       "command": "jsdesign-mcp"
-    }
-  }
-}
-```
-
-**用本地构建（对应安装方式 C）：**
-
-把路径换成你机器上的绝对路径：
-
-```json
-{
-  "mcpServers": {
-    "jsdesign": {
-      "command": "node",
-      "args": ["D:/projects/js.design/mcp-server/dist/index.js"]
     }
   }
 }
@@ -140,8 +75,7 @@ npm start
 {
   "mcpServers": {
     "jsdesign": {
-      "command": "npx",
-      "args": ["-y", "jsdesign-mcp-server"],
+      "command": "jsdesign-mcp",
       "env": {
         "JSDESIGN_MCP_PORT": "3848"
       }
@@ -154,7 +88,7 @@ npm start
 
 1. 打开 Cursor → **Settings → MCP**
 2. 找到 **jsdesign**，状态应为**绿灯**
-3. 若为红灯：检查 `mcp.json` 语法、网络（首次 `npx` 需下载包）、以及 `mcp-server` 是否已 `npm run build`（本地方式）
+3. 若为红灯：检查 `mcp.json` 语法，以及全局命令 `jsdesign-mcp` 是否可用
 
 默认 WebSocket：`ws://127.0.0.1:3847`，由 **daemon 常驻占用**（与 Cursor MCP stdio 进程分离）。  
 首次启用 MCP 时会自动 `spawn` daemon；关闭 Cursor / 重启 MCP **不会**关掉 3847，即时设计插件可保持连接。
@@ -259,12 +193,12 @@ MCP 绿灯后，再在即时设计里装插件并连上 WebSocket。
 
 | 现象 | 处理 |
 |------|------|
-| MCP 红灯 | 检查 `mcp.json`；首次用 `npx` 需能访问 npm；本地构建先 `npm run build` |
+| MCP 红灯 | 检查 `mcp.json`；确认已全局安装且 `jsdesign-mcp` 可用 |
 | 插件未连接 | 确认 daemon 在 `3847`（`jsdesign-mcp daemon`）；再点插件「重新连接」；保持面板打开 |
 | 无选中节点 | 先在画布选中目标 Frame |
 | 端口占用（非本 daemon） | 结束占用进程，或设 `JSDESIGN_MCP_PORT` 换端口，并同步改插件面板里的地址 |
 | 旧版 MCP 占着 3847 | 结束旧 `node`/`jsdesign-mcp` 进程后执行 `jsdesign-mcp daemon` |
-| `npx` / 命令找不到 | 确认包名是 `jsdesign-mcp-server`，全局命令是 `jsdesign-mcp` |
+| 命令找不到 | 确认已执行 `npm i -g jsdesign-mcp-server`，命令名为 `jsdesign-mcp` |
 
 ---
 
